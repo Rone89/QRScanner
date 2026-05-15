@@ -18,7 +18,10 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Select Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+      run: |
+        XCODE_PATH=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+        echo "Using Xcode: $XCODE_PATH"
+        sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
 
     - name: Show Xcode version
       run: xcodebuild -version
@@ -55,32 +58,19 @@ jobs:
     - name: Ad-hoc sign with entitlements
       run: |
         APP_PATH="./DerivedData/Build/Products/Release-iphoneos/QRScanner.app"
-
-        # Copy entitlements into the .app bundle
         cp QRScanner/QRScanner.entitlements "$APP_PATH/"
-
-        # Ad-hoc sign: this creates a valid CMS signature
-        # Even without an Apple Developer cert, the CMS structure is correct
-        # Sideloading tools (AltStore, Sideloadly, SideStore) will re-sign with user's cert
         codesign --force --deep --sign - \
           --entitlements QRScanner/QRScanner.entitlements \
           "$APP_PATH"
-
         echo "=== Code signature verification ==="
         codesign -dvvv "$APP_PATH" 2>&1 || true
 
     - name: Create IPA
       run: |
         APP_PATH="./DerivedData/Build/Products/Release-iphoneos/QRScanner.app"
-
         mkdir -p Payload
         cp -R "$APP_PATH" Payload/
-
-        # Create IPA with proper compression
         ditto -c -k --sequesterRsrc --keepParent Payload/QRScanner.app QRScanner.ipa
-
-        echo "=== IPA contents ==="
-        unzip -l QRScanner.ipa | head -50
         echo "=== IPA size ==="
         ls -lh QRScanner.ipa
 
