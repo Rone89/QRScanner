@@ -1,0 +1,72 @@
+name: Build iOS App
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    - name: Build for iOS Simulator
+      run: |
+        xcodebuild clean build \
+          -project QRScanner.xcodeproj \
+          -scheme QRScanner \
+          -destination 'platform=iOS Simulator,name=iPhone 16' \
+          -configuration Release \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
+
+    - name: Archive app
+      run: |
+        xcodebuild archive \
+          -project QRScanner.xcodeproj \
+          -scheme QRScanner \
+          -archivePath build/QRScanner.xcarchive \
+          -configuration Release \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
+
+    - name: Export IPA
+      run: |
+        mkdir -p build/ipa
+        xcodebuild -exportArchive \
+          -archivePath build/QRScanner.xcarchive \
+          -exportPath build/ipa \
+          -exportOptionsPlist exportOptions.plist
+
+    - name: Upload IPA artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: QRScanner-unsigned
+        path: build/ipa/*.ipa
+        retention-days: 30
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: build/ipa/*.ipa
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
