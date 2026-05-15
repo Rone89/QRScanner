@@ -1,0 +1,103 @@
+name: Build iOS App
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    - name: Build for iOS Simulator (validate compilation)
+      run: |
+        xcodebuild clean build \
+          -project QRScanner.xcodeproj \
+          -scheme QRScanner \
+          -destination 'platform=iOS Simulator,name=iPhone 16' \
+          -configuration Release \
+          -derivedDataPath ./DerivedData-sim \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
+
+    - name: Build for iOS Device (arm64)
+      run: |
+        xcodebuild clean build \
+          -project QRScanner.xcodeproj \
+          -scheme QRScanner \
+          -sdk iphoneos \
+          -configuration Release \
+          -derivedDataPath ./DerivedData \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
+
+    - name: Verify device binary
+      run: |
+        file ./DerivedData/Build/Products/Release-iphoneos/QRScanner.app/QRScanner
+        ls -la ./DerivedData/Build/Products/Release-iphoneos/QRScanner.app/
+
+    - name: Ad-hoc sign with entitlements
+      run: |
+        APP_PATH="./DerivedData/Build/Products/Release-iphoneos/QRScanner.app"
+
+        # Copy entitlements into the .app bundle
+        cp QRScanner/QRScanner.entitlements "$APP_PATH/"
+
+        # Ad-hoc sign: this creates a valid CMS signature
+        # Even without an Apple Developer cert, the CMS structure is correct
+        # Sideloading tools (AltStore, Sideloadly, SideStore) will re-sign with user's cert
+        codesign --force --deep --sign - \
+          --entitlements QRScanner/QRScanner.entitlements \
+          "$APP_PATH"
+
+        echo "=== Code signature verification ==="
+        codesign -dvvv "$APP_PATH" 2>&1 || true
+
+    - name: Create IPA
+      run: |
+        APP_PATH="./DerivedData/Build/Products/Release-iphoneos/QRScanner.app"
+
+        mkdir -p Payload
+        cp -R "$APP_PATH" Payload/
+
+        # Create IPA with proper compression
+        ditto -c -k --sequesterRsrc --keepParent Payload/QRScanner.app QRScanner.ipa
+
+        echo "=== IPA contents ==="
+        unzip -l QRScanner.ipa | head -50
+        echo "=== IPA size ==="
+        ls -lh QRScanner.ipa
+
+    - name: Upload IPA artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: QRScanner-unsigned
+        path: QRScanner.ipa
+        retention-days: 30
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: QRScanner.ipa
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
