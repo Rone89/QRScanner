@@ -5,6 +5,7 @@ import SwiftUI
 
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    let cameraManager: CameraManager
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView(frame: .zero)
@@ -12,6 +13,15 @@ struct CameraPreview: UIViewRepresentable {
         previewLayer.videoGravity = .resizeAspectFill
         view.layer.addSublayer(previewLayer)
         context.coordinator.previewLayer = previewLayer
+
+        // Tap to focus
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        view.addGestureRecognizer(tapGesture)
+
+        // Pinch to zoom
+        let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        view.addGestureRecognizer(pinchGesture)
+
         return view
     }
 
@@ -22,11 +32,41 @@ struct CameraPreview: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(cameraManager: cameraManager)
     }
 
     class Coordinator {
         var previewLayer: AVCaptureVideoPreviewLayer?
+        weak var cameraManager: CameraManager?
+        private var initialZoom: CGFloat = 1.0
+
+        init(cameraManager: CameraManager) {
+            self.cameraManager = cameraManager
+        }
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let previewLayer = previewLayer,
+                  let view = gesture.view,
+                  let manager = cameraManager else { return }
+
+            let location = gesture.location(in: view)
+            let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: location)
+            manager.focus(at: devicePoint)
+        }
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            guard let manager = cameraManager else { return }
+
+            switch gesture.state {
+            case .began:
+                initialZoom = manager.currentZoomFactor
+            case .changed:
+                let newZoom = initialZoom * gesture.scale
+                manager.setZoomFactor(newZoom)
+            default:
+                break
+            }
+        }
     }
 }
 
@@ -37,6 +77,12 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
     let session = AVCaptureSession()
     var onCodeDetected: ((String) -> Void)?
     private var hasDetectedCode = false
+    private var cameraDevice: AVCaptureDevice?
+
+    // Zoom state
+    @Published var currentZoomFactor: CGFloat = 1.0
+    private let minZoom: CGFloat = 1.0
+    private let maxZoom: CGFloat = 5.0
 
     override init() {
         super.init()
@@ -45,6 +91,7 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
 
     private func setupCamera() {
         guard let device = AVCaptureDevice.default(for: .video) else { return }
+        cameraDevice = device
 
         do {
             let input = try AVCaptureDeviceInput(device: device)
@@ -62,6 +109,37 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
             }
         } catch {
             print("Camera setup error: \(error)")
+        }
+    }
+
+    func setZoomFactor(_ factor: CGFloat) {
+        guard let device = cameraDevice else { return }
+        let clampedFactor = min(max(factor, minZoom), maxZoom)
+        currentZoomFactor = clampedFactor
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = clampedFactor
+            device.unlockForConfiguration()
+        } catch {
+            print("Zoom error: \(error)")
+        }
+    }
+
+    func focus(at devicePoint: CGPoint) {
+        guard let device = cameraDevice else { return }
+        do {
+            try device.lockForConfiguration()
+            if device.isFocusPointOfInterestSupported {
+                device.focusPointOfInterest = devicePoint
+                device.focusMode = .autoFocus
+            }
+            if device.isExposurePointOfInterestSupported {
+                device.exposurePointOfInterest = devicePoint
+                device.exposureMode = .autoExpose
+            }
+            device.unlockForConfiguration()
+        } catch {
+            print("Focus error: \(error)")
         }
     }
 

@@ -1,32 +1,24 @@
 import SwiftUI
 @preconcurrency import AVFoundation
 
-// MARK: - Root View (directly shows camera scanner)
+// MARK: - Root View (full-screen camera scanner with zoom/focus/detection animation)
 
 struct ContentView: View {
     @StateObject private var cameraManager = CameraManager()
     @State private var showPaymentSelection = false
     @State private var scannedCode: String = ""
+    @State private var detectedAnimation = false
 
     var body: some View {
         ZStack {
-            // Camera preview fills the entire screen
-            CameraPreview(session: cameraManager.session)
+            // Full-screen camera preview with tap-to-focus and pinch-to-zoom
+            CameraPreview(session: cameraManager.session, cameraManager: cameraManager)
                 .ignoresSafeArea()
 
-            // Scanning UI overlay
-            VStack(spacing: 0) {
-                Spacer().frame(height: 60)
-
-                Spacer()
-
-                // Scanning frame with Liquid Glass
-                scanningFrame
-                    .padding(.bottom, 32)
-
-                // Hint text
-                hintLabel
-                    .padding(.bottom, 120)
+            // Detection animation overlay
+            if detectedAnimation {
+                detectionOverlay
+                    .transition(.opacity.combined(with: .scale))
             }
         }
         .confirmationDialog("选择支付方式", isPresented: $showPaymentSelection, titleVisibility: .visible) {
@@ -55,110 +47,70 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Scanning Frame with iOS 26 Liquid Glass
+    // MARK: - Detection Animation
 
     @ViewBuilder
-    private var scanningFrame: some View {
-        if #available(iOS 26, *) {
-            RoundedRectangle(cornerRadius: 24)
-                .fill(.clear)
-                .frame(width: 260, height: 260)
-                .glassEffect(.regular, in: .rect(cornerRadius: 24))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(.white.opacity(0.7), lineWidth: 2)
-                )
-                .overlay(alignment: .topLeading) {
-                    CornerIndicator()
-                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
-                }
-                .overlay(alignment: .topTrailing) {
-                    CornerIndicator()
-                        .rotationEffect(.degrees(90))
-                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
-                }
-                .overlay(alignment: .bottomLeading) {
-                    CornerIndicator()
-                        .rotationEffect(.degrees(-90))
-                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    CornerIndicator()
-                        .rotationEffect(.degrees(180))
-                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
-                }
-        } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 260, height: 260)
+    private var detectionOverlay: some View {
+        ZStack {
+            // Expanding green ripple ring
+            Circle()
+                .stroke(Color.green, lineWidth: 4)
+                .frame(width: 140, height: 140)
+                .shadow(color: .green, radius: 12)
+                .scaleEffect(detectedAnimation ? 1.8 : 0.3)
+                .opacity(detectedAnimation ? 0.0 : 0.9)
+                .animation(.easeOut(duration: 0.6).repeatCount(1, autoreverses: false), value: detectedAnimation)
 
-                RoundedRectangle(cornerRadius: 24)
-                    .stroke(.white.opacity(0.5), lineWidth: 2)
-                    .frame(width: 260, height: 260)
-            }
-            .overlay(alignment: .topLeading) {
-                CornerIndicator()
-            }
-            .overlay(alignment: .topTrailing) {
-                CornerIndicator()
-                    .rotationEffect(.degrees(90))
-            }
-            .overlay(alignment: .bottomLeading) {
-                CornerIndicator()
-                    .rotationEffect(.degrees(-90))
-            }
-            .overlay(alignment: .bottomTrailing) {
-                CornerIndicator()
-                    .rotationEffect(.degrees(180))
-            }
+            // Checkmark icon
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 72))
+                .foregroundStyle(.green)
+                .background {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 54, height: 54)
+                }
+                .shadow(color: .green.opacity(0.5), radius: 8)
+                .scaleEffect(detectedAnimation ? 1.0 : 0.1)
+                .opacity(detectedAnimation ? 1.0 : 0.0)
         }
-    }
-
-    // MARK: - Hint Label with Liquid Glass
-
-    @ViewBuilder
-    private var hintLabel: some View {
-        Text("将二维码放入框内")
-            .font(.system(size: 17, weight: .medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 32)
-            .padding(.vertical, 12)
-            .background {
-                if #available(iOS 26, *) {
-                    Capsule()
-                        .glassEffect(.regular, in: .capsule)
-                } else {
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                }
-            }
     }
 
     // MARK: - QR Code Handling
 
     private func handleScannedCode(_ code: String) {
-        let detector = QRCodeDetector()
-        let result = detector.detectQRCodeType(code)
+        // Trigger detection animation
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+            detectedAnimation = true
+        }
 
-        switch result {
-        case .alipay(let url):
-            if let url = URL(string: url) {
-                UIApplication.shared.open(url)
+        // Brief delay for animation, then process
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            withAnimation(.easeOut(duration: 0.2)) {
+                detectedAnimation = false
             }
-            resumeScanning()
 
-        case .wechat:
-            if let url = URL(string: "weixin://scanqrcode") {
-                UIApplication.shared.open(url)
+            let detector = QRCodeDetector()
+            let result = detector.detectQRCodeType(code)
+
+            switch result {
+            case .alipay(let url):
+                if let url = URL(string: url) {
+                    UIApplication.shared.open(url)
+                }
+                resumeScanning()
+
+            case .wechat:
+                if let url = URL(string: "weixin://scanqrcode") {
+                    UIApplication.shared.open(url)
+                }
+                resumeScanning()
+
+            case .generic:
+                scannedCode = code
+                cameraManager.stopSession()
+                showPaymentSelection = true
             }
-            resumeScanning()
-
-        case .generic:
-            // Stop camera and show payment selection dialog
-            scannedCode = code
-            cameraManager.stopSession()
-            showPaymentSelection = true
         }
     }
 
@@ -178,21 +130,6 @@ struct ContentView: View {
     private func openWeChat() {
         if let url = URL(string: "weixin://scanqrcode") {
             UIApplication.shared.open(url)
-        }
-    }
-}
-
-// MARK: - Corner Indicator
-
-struct CornerIndicator: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Rectangle()
-                .fill(.white)
-                .frame(width: 3, height: 24)
-            Rectangle()
-                .fill(.white)
-                .frame(width: 24, height: 3)
         }
     }
 }
