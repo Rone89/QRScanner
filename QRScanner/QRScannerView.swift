@@ -79,6 +79,9 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
     private var hasDetectedCode = false
     private var cameraDevice: AVCaptureDevice?
 
+    // Detected QR code bounding rect (normalized coordinates)
+    @Published var detectedRect: CGRect? = nil
+
     // Zoom state
     @Published var currentZoomFactor: CGFloat = 1.0
     private let minZoom: CGFloat = 1.0
@@ -171,11 +174,22 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
               let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject,
               let code = readableObject.stringValue else { return }
 
+        let bounds = metadataObject.bounds
         Task { @MainActor in
             if !hasDetectedCode {
                 hasDetectedCode = true
+                // Show bounding box
+                withAnimation(.spring(response: 0.2)) {
+                    detectedRect = bounds
+                }
                 AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
                 onCodeDetected?(code)
+                // Clear bounding box after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        detectedRect = nil
+                    }
+                }
             }
         }
     }
