@@ -30,12 +30,15 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
+    - name: List available simulators
+      run: xcrun simctl list devices available 2>/dev/null | head -20 || true
+
     - name: Build for iOS Simulator (validate compilation)
       run: |
         xcodebuild clean build \
           -project QRScanner.xcodeproj \
           -scheme QRScanner \
-          -destination 'platform=iOS Simulator,name=iPhone 16' \
+          -destination 'generic/platform=iOS Simulator' \
           -configuration Release \
           -derivedDataPath ./DerivedData-sim \
           CODE_SIGN_IDENTITY="" \
