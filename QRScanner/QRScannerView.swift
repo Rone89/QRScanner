@@ -1,109 +1,7 @@
 import SwiftUI
-import AVFoundation
+@preconcurrency import AVFoundation
 
-struct QRScannerView: View {
-    @Binding var isPresented: Bool
-    let onCodeScanned: (String) -> Void
-
-    @StateObject private var cameraManager = CameraManager()
-
-    var body: some View {
-        ZStack {
-            CameraPreview(session: cameraManager.session)
-                .ignoresSafeArea()
-
-            VStack {
-                HStack {
-                    Button(action: {
-                        isPresented = false
-                    }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle()
-                                    .fill(.ultraThinMaterial)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(.white.opacity(0.2), lineWidth: 1)
-                                    )
-                            )
-                    }
-                    .padding(.leading, 20)
-
-                    Spacer()
-                }
-                .padding(.top, 60)
-
-                Spacer()
-
-                ZStack {
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(.white.opacity(0.5), lineWidth: 3)
-                        .frame(width: 280, height: 280)
-
-                    VStack {
-                        HStack {
-                            CornerIndicator()
-                            Spacer()
-                            CornerIndicator()
-                                .rotationEffect(.degrees(90))
-                        }
-                        Spacer()
-                        HStack {
-                            CornerIndicator()
-                                .rotationEffect(.degrees(-90))
-                            Spacer()
-                            CornerIndicator()
-                                .rotationEffect(.degrees(180))
-                        }
-                    }
-                    .frame(width: 280, height: 280)
-                }
-
-                Text("将二维码放入框内")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.top, 32)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 12)
-                    .background(
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                Capsule()
-                                    .stroke(.white.opacity(0.2), lineWidth: 1)
-                            )
-                    )
-
-                Spacer()
-            }
-        }
-        .onAppear {
-            cameraManager.startSession()
-            cameraManager.onCodeDetected = { code in
-                onCodeScanned(code)
-            }
-        }
-        .onDisappear {
-            cameraManager.stopSession()
-        }
-    }
-}
-
-struct CornerIndicator: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Rectangle()
-                .fill(.white)
-                .frame(width: 4, height: 30)
-            Rectangle()
-                .fill(.white)
-                .frame(width: 30, height: 4)
-        }
-    }
-}
+// MARK: - Camera Preview (UIViewRepresentable)
 
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
@@ -131,6 +29,8 @@ struct CameraPreview: UIViewRepresentable {
         var previewLayer: AVCaptureVideoPreviewLayer?
     }
 }
+
+// MARK: - Camera Manager
 
 @MainActor
 class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsDelegate {

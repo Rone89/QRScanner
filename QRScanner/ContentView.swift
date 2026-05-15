@@ -1,139 +1,198 @@
 import SwiftUI
+@preconcurrency import AVFoundation
+
+// MARK: - Root View (directly shows camera scanner)
 
 struct ContentView: View {
-    @State private var isScanning = false
-    @State private var scannedCode: String?
-    @State private var showAlert = false
-    @State private var alertTitle = ""
-    @State private var alertMessage = ""
+    @StateObject private var cameraManager = CameraManager()
+    @State private var showPaymentSelection = false
+    @State private var scannedCode: String = ""
 
     var body: some View {
         ZStack {
-            // Background with Liquid Glass effect
-            Color.black
+            // Camera preview fills the entire screen
+            CameraPreview(session: cameraManager.session)
                 .ignoresSafeArea()
 
+            // Scanning UI overlay
             VStack(spacing: 0) {
-                // Header
-                VStack(spacing: 8) {
-                    Image(systemName: "qrcode.viewfinder")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.white)
-                        .padding(.top, 60)
-
-                    Text("扫码")
-                        .font(.system(size: 34, weight: .bold))
-                        .foregroundStyle(.white)
-
-                    Text("对准二维码自动识别")
-                        .font(.system(size: 17))
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-                .padding(.bottom, 40)
+                Spacer().frame(height: 60)
 
                 Spacer()
 
-                // Scan button with Liquid Glass effect
-                Button(action: {
-                    isScanning = true
-                }) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 24))
-                        Text("开始扫码")
-                            .font(.system(size: 20, weight: .semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(.white.opacity(0.2), lineWidth: 1)
-                            )
-                    )
-                }
-                .padding(.horizontal, 32)
-                .padding(.bottom, 60)
+                // Scanning frame with Liquid Glass
+                scanningFrame
+                    .padding(.bottom, 32)
+
+                // Hint text
+                hintLabel
+                    .padding(.bottom, 120)
             }
         }
-        .fullScreenCover(isPresented: $isScanning) {
-            QRScannerView(
-                isPresented: $isScanning,
-                onCodeScanned: { code in
-                    handleScannedCode(code)
-                }
-            )
-        }
-        .alert(alertTitle, isPresented: $showAlert) {
-            Button("确定", role: .cancel) { }
+        .confirmationDialog("选择支付方式", isPresented: $showPaymentSelection, titleVisibility: .visible) {
+            Button("支付宝") {
+                openAlipay(scannedCode)
+                resumeScanning()
+            }
+            Button("微信") {
+                openWeChat()
+                resumeScanning()
+            }
+            Button("取消", role: .cancel) {
+                resumeScanning()
+            }
         } message: {
-            Text(alertMessage)
+            Text("请选择使用哪个应用打开此二维码")
+        }
+        .onAppear {
+            cameraManager.startSession()
+            cameraManager.onCodeDetected = { code in
+                handleScannedCode(code)
+            }
+        }
+        .onDisappear {
+            cameraManager.stopSession()
         }
     }
 
-    private func handleScannedCode(_ code: String) {
-        scannedCode = code
+    // MARK: - Scanning Frame with iOS 26 Liquid Glass
 
-        // Detect QR code type and route accordingly
+    @ViewBuilder
+    private var scanningFrame: some View {
+        if #available(iOS 26, *) {
+            RoundedRectangle(cornerRadius: 24)
+                .fill(.clear)
+                .frame(width: 260, height: 260)
+                .glassEffect(.thin, in: .rect(cornerRadius: 24))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(.white.opacity(0.7), lineWidth: 2)
+                )
+                .overlay(alignment: .topLeading) {
+                    CornerIndicator()
+                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
+                }
+                .overlay(alignment: .topTrailing) {
+                    CornerIndicator()
+                        .rotationEffect(.degrees(90))
+                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
+                }
+                .overlay(alignment: .bottomLeading) {
+                    CornerIndicator()
+                        .rotationEffect(.degrees(-90))
+                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    CornerIndicator()
+                        .rotationEffect(.degrees(180))
+                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
+                }
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 260, height: 260)
+
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(.white.opacity(0.5), lineWidth: 2)
+                    .frame(width: 260, height: 260)
+            }
+            .overlay(alignment: .topLeading) {
+                CornerIndicator()
+            }
+            .overlay(alignment: .topTrailing) {
+                CornerIndicator()
+                    .rotationEffect(.degrees(90))
+            }
+            .overlay(alignment: .bottomLeading) {
+                CornerIndicator()
+                    .rotationEffect(.degrees(-90))
+            }
+            .overlay(alignment: .bottomTrailing) {
+                CornerIndicator()
+                    .rotationEffect(.degrees(180))
+            }
+        }
+    }
+
+    // MARK: - Hint Label with Liquid Glass
+
+    @ViewBuilder
+    private var hintLabel: some View {
+        Text("将二维码放入框内")
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 12)
+            .background {
+                if #available(iOS 26, *) {
+                    Capsule()
+                        .glassEffect(.ultraThin, in: .capsule)
+                } else {
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                }
+            }
+    }
+
+    // MARK: - QR Code Handling
+
+    private func handleScannedCode(_ code: String) {
         let detector = QRCodeDetector()
         let result = detector.detectQRCodeType(code)
 
         switch result {
         case .alipay(let url):
-            // Open Alipay directly
             if let url = URL(string: url) {
                 UIApplication.shared.open(url)
             }
-            isScanning = false
+            resumeScanning()
 
         case .wechat:
-            // Open WeChat scan
             if let url = URL(string: "weixin://scanqrcode") {
                 UIApplication.shared.open(url)
             }
-            isScanning = false
+            resumeScanning()
 
         case .generic:
-            // Show selection dialog
-            isScanning = false
-            showPaymentSelection(for: code)
+            // Stop camera and show payment selection dialog
+            scannedCode = code
+            cameraManager.stopSession()
+            showPaymentSelection = true
         }
     }
 
-    private func showPaymentSelection(for code: String) {
-        let alert = UIAlertController(
-            title: "选择支付方式",
-            message: "请选择使用哪个应用打开此二维码",
-            preferredStyle: .actionSheet
-        )
+    private func resumeScanning() {
+        showPaymentSelection = false
+        cameraManager.startSession()
+    }
 
-        alert.addAction(UIAlertAction(title: "支付宝", style: .default) { _ in
-            // Open in Alipay
-            let alipayURL = "alipays://platformapi/startapp?saId=10000007&qrcode=\(code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-            if let url = URL(string: alipayURL) {
-                UIApplication.shared.open(url)
-            }
-        })
+    private func openAlipay(_ code: String) {
+        let encoded = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let urlStr = "alipays://platformapi/startapp?saId=10000007&qrcode=\(encoded)"
+        if let url = URL(string: urlStr) {
+            UIApplication.shared.open(url)
+        }
+    }
 
-        alert.addAction(UIAlertAction(title: "微信", style: .default) { _ in
-            // Open WeChat scan
-            if let url = URL(string: "weixin://scanqrcode") {
-                UIApplication.shared.open(url)
-            }
-        })
-
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootViewController = windowScene.windows.first?.rootViewController {
-            rootViewController.present(alert, animated: true)
+    private func openWeChat() {
+        if let url = URL(string: "weixin://scanqrcode") {
+            UIApplication.shared.open(url)
         }
     }
 }
 
-#Preview {
-    ContentView()
+// MARK: - Corner Indicator
+
+struct CornerIndicator: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle()
+                .fill(.white)
+                .frame(width: 3, height: 24)
+            Rectangle()
+                .fill(.white)
+                .frame(width: 24, height: 3)
+        }
+    }
 }
