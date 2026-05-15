@@ -44,32 +44,25 @@ struct CameraPreview: UIViewRepresentable {
             self.cameraManager = cameraManager
         }
 
-        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+        @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let previewLayer = previewLayer,
                   let view = gesture.view,
                   let manager = cameraManager else { return }
 
             let location = gesture.location(in: view)
             let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: location)
-            Task { @MainActor in
-                manager.focus(at: devicePoint)
-            }
+            manager.focus(at: devicePoint)
         }
 
-        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+        @MainActor @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
             guard let manager = cameraManager else { return }
 
             switch gesture.state {
             case .began:
-                Task { @MainActor in
-                    initialZoom = manager.currentZoomFactor
-                }
+                initialZoom = manager.currentZoomFactor
             case .changed:
-                let zoom = initialZoom
-                let scale = gesture.scale
-                Task { @MainActor in
-                    manager.setZoomFactor(zoom * scale)
-                }
+                let newZoom = initialZoom * gesture.scale
+                manager.setZoomFactor(newZoom)
             default:
                 break
             }
