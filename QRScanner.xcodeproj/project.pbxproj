@@ -102,8 +102,8 @@
 			buildRules = (
 			);
 			dependencies = (
-			);
 				3D1A2B3C4D5E6F78901234A8 /* QRScannerWidgetExtension */,
+			);
 			name = QRScanner;
 			productName = QRScanner;
 			productReference = 3D1A2B3C4D5E6F7890123462 /* QRScanner.app */;
