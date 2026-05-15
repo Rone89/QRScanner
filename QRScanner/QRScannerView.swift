@@ -51,7 +51,9 @@ struct CameraPreview: UIViewRepresentable {
 
             let location = gesture.location(in: view)
             let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: location)
-            manager.focus(at: devicePoint)
+            Task { @MainActor in
+                manager.focus(at: devicePoint)
+            }
         }
 
         @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
@@ -59,10 +61,15 @@ struct CameraPreview: UIViewRepresentable {
 
             switch gesture.state {
             case .began:
-                initialZoom = manager.currentZoomFactor
+                Task { @MainActor in
+                    initialZoom = manager.currentZoomFactor
+                }
             case .changed:
-                let newZoom = initialZoom * gesture.scale
-                manager.setZoomFactor(newZoom)
+                let zoom = initialZoom
+                let scale = gesture.scale
+                Task { @MainActor in
+                    manager.setZoomFactor(zoom * scale)
+                }
             default:
                 break
             }
