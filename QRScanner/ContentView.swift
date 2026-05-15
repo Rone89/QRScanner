@@ -63,7 +63,7 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 24)
                 .fill(.clear)
                 .frame(width: 260, height: 260)
-                .glassEffect(.thin, in: .rect(cornerRadius: 24))
+                .glassEffect(.regular, in: .rect(cornerRadius: 24))
                 .overlay(
                     RoundedRectangle(cornerRadius: 24)
                         .stroke(.white.opacity(0.7), lineWidth: 2)
@@ -127,7 +127,7 @@ struct ContentView: View {
             .background {
                 if #available(iOS 26, *) {
                     Capsule()
-                        .glassEffect(.ultraThin, in: .capsule)
+                        .glassEffect(.regular, in: .capsule)
                 } else {
                     Capsule()
                         .fill(.ultraThinMaterial)
