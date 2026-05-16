@@ -1,5 +1,5 @@
 import SwiftUI
-import AVFoundation
+@preconcurrency import AVFoundation
 
 // MARK: - Camera Preview (UIViewRepresentable)
 
@@ -84,10 +84,8 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
 
     private var cameraDevice: AVCaptureDevice?
 
-    // Detected QR code bounding rect (normalized coordinates 0..1)
     @Published var detectedRect: CGRect? = nil
 
-    // Zoom state
     @Published var currentZoomFactor: CGFloat = 1.0
     private let minZoom: CGFloat = 1.0
     private let maxZoom: CGFloat = 5.0
@@ -139,8 +137,6 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
         }
     }
 
-    // MARK: - Zoom & Focus
-
     func setZoomFactor(_ factor: CGFloat) {
         guard let device = cameraDevice else { return }
         let clamped = min(max(factor, minZoom), maxZoom)
@@ -172,8 +168,6 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
         }
     }
 
-    // MARK: - QR Code Detection
-
     nonisolated func metadataOutput(
         _ output: AVCaptureMetadataOutput,
         didOutput metadataObjects: [AVMetadataObject],
@@ -182,10 +176,9 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
         guard let metadataObject = metadataObjects.first,
               let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject,
               let code = readableObject.stringValue else {
-            // No code detected — clear bounding box
             Task { @MainActor in
                 withAnimation(.easeOut(duration: 0.25)) {
-                    detectedRect = nil
+                    self.detectedRect = nil
                 }
             }
             return
@@ -194,24 +187,22 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
         let bounds = readableObject.bounds
 
         Task { @MainActor in
-            if !hasDetectedCode {
-                hasDetectedCode = true
+            if !self.hasDetectedCode {
+                self.hasDetectedCode = true
 
-                // Show bounding box with spring animation (iOS camera style)
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    detectedRect = bounds
+                    self.detectedRect = bounds
                 }
 
                 AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
 
-                onCodeDetected?(code)
+                self.onCodeDetected?(code)
 
-                // Keep the box visible for a moment then clear
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     withAnimation(.easeOut(duration: 0.3)) {
-                        detectedRect = nil
+                        self.detectedRect = nil
                     }
-                    hasDetectedCode = false
+                    self.hasDetectedCode = false
                 }
             }
         }
