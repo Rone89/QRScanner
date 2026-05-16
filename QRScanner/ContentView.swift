@@ -163,11 +163,11 @@ struct IntelligenceGlow: View {
                 .strokeBorder(
                     AngularGradient(
                         colors: [
-                            Color(red: 0.2, green: 0.4, blue: 1.0),    // blue
-                            Color(red: 0.5, green: 0.3, blue: 0.9),    // purple
-                            Color(red: 0.95, green: 0.3, blue: 0.5),   // pink
-                            Color(red: 1.0, green: 0.6, blue: 0.2),    // orange
-                            Color(red: 0.2, green: 0.4, blue: 1.0),    // blue (loop)
+                            Color(red: 0.2, green: 0.4, blue: 1.0),
+                            Color(red: 0.5, green: 0.3, blue: 0.9),
+                            Color(red: 0.95, green: 0.3, blue: 0.5),
+                            Color(red: 1.0, green: 0.6, blue: 0.2),
+                            Color(red: 0.2, green: 0.4, blue: 1.0),
                         ],
                         center: .center
                     ),
@@ -179,4 +179,33 @@ struct IntelligenceGlow: View {
                 .padding(6)
                 .ignoresSafeArea()
 
-        
+            // Secondary reverse-rotating glow for depth
+            RoundedRectangle(cornerRadius: 40)
+                .strokeBorder(
+                    AngularGradient(
+                        colors: [
+                            .white.opacity(0.0),
+                            .white.opacity(0.2),
+                            .white.opacity(0.25),
+                            .white.opacity(0.0),
+                        ],
+                        center: .center
+                    ),
+                    lineWidth: 8
+                )
+                .rotationEffect(.degrees(isAnimating ? -180 : 0))
+                .blur(radius: 28)
+                .opacity(opacity * 0.35)
+                .padding(12)
+                .ignoresSafeArea()
+        }
+        .onAppear {
+            withAnimation(
+                .linear(duration: 3.0)
+                .repeatForever(autoreverses: false)
+            ) {
+                isAnimating = true
+            }
+        }
+    }
+}

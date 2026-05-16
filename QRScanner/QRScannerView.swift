@@ -14,14 +14,12 @@ struct CameraPreview: UIViewRepresentable {
         view.layer.addSublayer(previewLayer)
         context.coordinator.previewLayer = previewLayer
 
-        // Tap to focus gesture
         let tapGesture = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleTap(_:))
         )
         view.addGestureRecognizer(tapGesture)
 
-        // Pinch to zoom gesture
         let pinchGesture = UIPinchGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handlePinch(_:))
@@ -84,7 +82,6 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
     var onCodeDetected: ((String) -> Void)?
     private var hasDetectedCode = false
 
-    // Camera device for zoom/focus
     private var cameraDevice: AVCaptureDevice?
 
     // Detected QR code bounding rect (normalized coordinates 0..1)
@@ -92,4 +89,131 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
 
     // Zoom state
     @Published var currentZoomFactor: CGFloat = 1.0
-    private let minZoom: CGFloat = 1.
+    private let minZoom: CGFloat = 1.0
+    private let maxZoom: CGFloat = 5.0
+
+    override init() {
+        super.init()
+        setupCamera()
+    }
+
+    private func setupCamera() {
+        guard let device = AVCaptureDevice.default(for: .video) else { return }
+        cameraDevice = device
+
+        do {
+            let input = try AVCaptureDeviceInput(device: device)
+
+            if session.canAddInput(input) {
+                session.addInput(input)
+            }
+
+            let output = AVCaptureMetadataOutput()
+
+            if session.canAddOutput(output) {
+                session.addOutput(output)
+                output.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
+                output.metadataObjectTypes = [.qr, .ean8, .ean13, .pdf417]
+            }
+        } catch {
+            print("Camera setup error: \(error)")
+        }
+    }
+
+    func startSession() {
+        hasDetectedCode = false
+        let captureSession = session
+        if !captureSession.isRunning {
+            DispatchQueue.global(qos: .userInitiated).async {
+                captureSession.startRunning()
+            }
+        }
+    }
+
+    func stopSession() {
+        let captureSession = session
+        if captureSession.isRunning {
+            DispatchQueue.global(qos: .userInitiated).async {
+                captureSession.stopRunning()
+            }
+        }
+    }
+
+    // MARK: - Zoom & Focus
+
+    func setZoomFactor(_ factor: CGFloat) {
+        guard let device = cameraDevice else { return }
+        let clamped = min(max(factor, minZoom), maxZoom)
+        currentZoomFactor = clamped
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = clamped
+            device.unlockForConfiguration()
+        } catch {
+            print("Zoom error: \(error)")
+        }
+    }
+
+    func focus(at devicePoint: CGPoint) {
+        guard let device = cameraDevice else { return }
+        do {
+            try device.lockForConfiguration()
+            if device.isFocusPointOfInterestSupported {
+                device.focusPointOfInterest = devicePoint
+                device.focusMode = .autoFocus
+            }
+            if device.isExposurePointOfInterestSupported {
+                device.exposurePointOfInterest = devicePoint
+                device.exposureMode = .autoExpose
+            }
+            device.unlockForConfiguration()
+        } catch {
+            print("Focus error: \(error)")
+        }
+    }
+
+    // MARK: - QR Code Detection
+
+    nonisolated func metadataOutput(
+        _ output: AVCaptureMetadataOutput,
+        didOutput metadataObjects: [AVMetadataObject],
+        from connection: AVCaptureConnection
+    ) {
+        guard let metadataObject = metadataObjects.first,
+              let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject,
+              let code = readableObject.stringValue else {
+            // No code detected — clear bounding box
+            Task { @MainActor in
+                withAnimation(.easeOut(duration: 0.25)) {
+                    detectedRect = nil
+                }
+            }
+            return
+        }
+
+        let bounds = readableObject.bounds
+
+        Task { @MainActor in
+            if !hasDetectedCode {
+                hasDetectedCode = true
+
+                // Show bounding box with spring animation (iOS camera style)
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    detectedRect = bounds
+                }
+
+                AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
+
+                onCodeDetected?(code)
+
+                // Keep the box visible for a moment then clear
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        detectedRect = nil
+                    }
+                    hasDetectedCode = false
+                }
+            }
+        }
+    }
+}
