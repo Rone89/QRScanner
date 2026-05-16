@@ -1,10 +1,11 @@
 import SwiftUI
-@preconcurrency import AVFoundation
+import AVFoundation
 
 // MARK: - Camera Preview (UIViewRepresentable)
 
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    let cameraManager: CameraManager
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView(frame: .zero)
@@ -12,6 +13,21 @@ struct CameraPreview: UIViewRepresentable {
         previewLayer.videoGravity = .resizeAspectFill
         view.layer.addSublayer(previewLayer)
         context.coordinator.previewLayer = previewLayer
+
+        // Tap to focus gesture
+        let tapGesture = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        view.addGestureRecognizer(tapGesture)
+
+        // Pinch to zoom gesture
+        let pinchGesture = UIPinchGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePinch(_:))
+        )
+        view.addGestureRecognizer(pinchGesture)
+
         return view
     }
 
@@ -22,11 +38,41 @@ struct CameraPreview: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(cameraManager: cameraManager)
     }
 
     class Coordinator {
         var previewLayer: AVCaptureVideoPreviewLayer?
+        weak var cameraManager: CameraManager?
+        private var initialZoom: CGFloat = 1.0
+
+        init(cameraManager: CameraManager) {
+            self.cameraManager = cameraManager
+        }
+
+        @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let previewLayer = previewLayer,
+                  let view = gesture.view,
+                  let manager = cameraManager else { return }
+
+            let location = gesture.location(in: view)
+            let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: location)
+            manager.focus(at: devicePoint)
+        }
+
+        @MainActor @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            guard let manager = cameraManager else { return }
+
+            switch gesture.state {
+            case .began:
+                initialZoom = manager.currentZoomFactor
+            case .changed:
+                let newZoom = initialZoom * gesture.scale
+                manager.setZoomFactor(newZoom)
+            default:
+                break
+            }
+        }
     }
 }
 
@@ -38,67 +84,12 @@ class CameraManager: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsD
     var onCodeDetected: ((String) -> Void)?
     private var hasDetectedCode = false
 
-    override init() {
-        super.init()
-        setupCamera()
-    }
+    // Camera device for zoom/focus
+    private var cameraDevice: AVCaptureDevice?
 
-    private func setupCamera() {
-        guard let device = AVCaptureDevice.default(for: .video) else { return }
+    // Detected QR code bounding rect (normalized coordinates 0..1)
+    @Published var detectedRect: CGRect? = nil
 
-        do {
-            let input = try AVCaptureDeviceInput(device: device)
-
-            if session.canAddInput(input) {
-                session.addInput(input)
-            }
-
-            let output = AVCaptureMetadataOutput()
-
-            if session.canAddOutput(output) {
-                session.addOutput(output)
-                output.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
-                output.metadataObjectTypes = [.qr, .ean8, .ean13, .pdf417]
-            }
-        } catch {
-            print("Camera setup error: \(error)")
-        }
-    }
-
-    func startSession() {
-        hasDetectedCode = false
-        let captureSession = session
-        if !captureSession.isRunning {
-            DispatchQueue.global(qos: .userInitiated).async {
-                captureSession.startRunning()
-            }
-        }
-    }
-
-    func stopSession() {
-        let captureSession = session
-        if captureSession.isRunning {
-            DispatchQueue.global(qos: .userInitiated).async {
-                captureSession.stopRunning()
-            }
-        }
-    }
-
-    nonisolated func metadataOutput(
-        _ output: AVCaptureMetadataOutput,
-        didOutput metadataObjects: [AVMetadataObject],
-        from connection: AVCaptureConnection
-    ) {
-        guard let metadataObject = metadataObjects.first,
-              let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject,
-              let code = readableObject.stringValue else { return }
-
-        Task { @MainActor in
-            if !hasDetectedCode {
-                hasDetectedCode = true
-                AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
-                onCodeDetected?(code)
-            }
-        }
-    }
-}
+    // Zoom state
+    @Published var currentZoomFactor: CGFloat = 1.0
+    private let minZoom: CGFloat = 1.

@@ -1,32 +1,31 @@
 import SwiftUI
 @preconcurrency import AVFoundation
 
-// MARK: - Root View (directly shows camera scanner)
+// MARK: - Root View
 
 struct ContentView: View {
     @StateObject private var cameraManager = CameraManager()
     @State private var showPaymentSelection = false
     @State private var scannedCode: String = ""
+    @State private var showGlowAnimation = false
+    @State private var glowOpacity: Double = 0
 
     var body: some View {
         ZStack {
             // Camera preview fills the entire screen
-            CameraPreview(session: cameraManager.session)
+            CameraPreview(session: cameraManager.session, cameraManager: cameraManager)
                 .ignoresSafeArea()
 
-            // Scanning UI overlay
-            VStack(spacing: 0) {
-                Spacer().frame(height: 60)
+            // iOS native-style QR bounding box — tracks actual QR position
+            if let rect = cameraManager.detectedRect {
+                QRBoundingBox(rect: rect)
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+            }
 
-                Spacer()
-
-                // Scanning frame with Liquid Glass
-                scanningFrame
-                    .padding(.bottom, 32)
-
-                // Hint text
-                hintLabel
-                    .padding(.bottom, 120)
+            // Apple Intelligence-style rotating edge glow on launch
+            if showGlowAnimation {
+                IntelligenceGlow(opacity: glowOpacity)
+                    .transition(.opacity)
             }
         }
         .confirmationDialog("选择支付方式", isPresented: $showPaymentSelection, titleVisibility: .visible) {
@@ -49,90 +48,24 @@ struct ContentView: View {
             cameraManager.onCodeDetected = { code in
                 handleScannedCode(code)
             }
+            // Play the Apple Intelligence glow on appear
+            withAnimation(.easeOut(duration: 0.6)) {
+                showGlowAnimation = true
+                glowOpacity = 1
+            }
+            // Fade out after 2.5 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                withAnimation(.easeOut(duration: 0.8)) {
+                    glowOpacity = 0
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    showGlowAnimation = false
+                }
+            }
         }
         .onDisappear {
             cameraManager.stopSession()
         }
-    }
-
-    // MARK: - Scanning Frame with iOS 26 Liquid Glass
-
-    @ViewBuilder
-    private var scanningFrame: some View {
-        if #available(iOS 26, *) {
-            RoundedRectangle(cornerRadius: 24)
-                .fill(.clear)
-                .frame(width: 260, height: 260)
-                .glassEffect(.regular, in: .rect(cornerRadius: 24))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(.white.opacity(0.7), lineWidth: 2)
-                )
-                .overlay(alignment: .topLeading) {
-                    CornerIndicator()
-                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
-                }
-                .overlay(alignment: .topTrailing) {
-                    CornerIndicator()
-                        .rotationEffect(.degrees(90))
-                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
-                }
-                .overlay(alignment: .bottomLeading) {
-                    CornerIndicator()
-                        .rotationEffect(.degrees(-90))
-                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    CornerIndicator()
-                        .rotationEffect(.degrees(180))
-                        .glassEffect(.regular.tint(.white), in: .rect(cornerRadius: 3))
-                }
-        } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 260, height: 260)
-
-                RoundedRectangle(cornerRadius: 24)
-                    .stroke(.white.opacity(0.5), lineWidth: 2)
-                    .frame(width: 260, height: 260)
-            }
-            .overlay(alignment: .topLeading) {
-                CornerIndicator()
-            }
-            .overlay(alignment: .topTrailing) {
-                CornerIndicator()
-                    .rotationEffect(.degrees(90))
-            }
-            .overlay(alignment: .bottomLeading) {
-                CornerIndicator()
-                    .rotationEffect(.degrees(-90))
-            }
-            .overlay(alignment: .bottomTrailing) {
-                CornerIndicator()
-                    .rotationEffect(.degrees(180))
-            }
-        }
-    }
-
-    // MARK: - Hint Label with Liquid Glass
-
-    @ViewBuilder
-    private var hintLabel: some View {
-        Text("将二维码放入框内")
-            .font(.system(size: 17, weight: .medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 32)
-            .padding(.vertical, 12)
-            .background {
-                if #available(iOS 26, *) {
-                    Capsule()
-                        .glassEffect(.regular, in: .capsule)
-                } else {
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                }
-            }
     }
 
     // MARK: - QR Code Handling
@@ -141,24 +74,26 @@ struct ContentView: View {
         let detector = QRCodeDetector()
         let result = detector.detectQRCodeType(code)
 
-        switch result {
-        case .alipay(let url):
-            if let url = URL(string: url) {
-                UIApplication.shared.open(url)
-            }
-            resumeScanning()
+        // Brief delay so user can see the bounding box
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            switch result {
+            case .alipay(let url):
+                if let url = URL(string: url) {
+                    UIApplication.shared.open(url)
+                }
+                resumeScanning()
 
-        case .wechat:
-            if let url = URL(string: "weixin://scanqrcode") {
-                UIApplication.shared.open(url)
-            }
-            resumeScanning()
+            case .wechat:
+                if let url = URL(string: "weixin://scanqrcode") {
+                    UIApplication.shared.open(url)
+                }
+                resumeScanning()
 
-        case .generic:
-            // Stop camera and show payment selection dialog
-            scannedCode = code
-            cameraManager.stopSession()
-            showPaymentSelection = true
+            case .generic:
+                scannedCode = code
+                cameraManager.stopSession()
+                showPaymentSelection = true
+            }
         }
     }
 
@@ -182,17 +117,66 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Corner Indicator
+// MARK: - iOS Native-Style QR Bounding Box
 
-struct CornerIndicator: View {
+/// Renders a yellow highlight box that tracks the actual QR code position,
+/// matching the iOS Camera app's native QR detection animation style.
+struct QRBoundingBox: View {
+    let rect: CGRect // normalized coordinates (0..1)
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Rectangle()
-                .fill(.white)
-                .frame(width: 3, height: 24)
-            Rectangle()
-                .fill(.white)
-                .frame(width: 24, height: 3)
+        GeometryReader { geometry in
+            let scale = geometry.size.width
+            let boxRect = CGRect(
+                x: rect.origin.x * scale,
+                y: rect.origin.y * scale,
+                width: rect.size.width * scale,
+                height: rect.size.height * scale
+            )
+
+            // Yellow rounded rect with glow — matches iOS camera QR highlight
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.yellow, lineWidth: 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.yellow.opacity(0.12))
+                )
+                .shadow(color: .yellow.opacity(0.6), radius: 12, x: 0, y: 0)
+                .frame(width: boxRect.width, height: boxRect.height)
+                .position(x: boxRect.midX, y: boxRect.midY)
         }
     }
 }
+
+// MARK: - Apple Intelligence Style Rotating Edge Glow
+
+/// A rotating multi-color gradient glow around the screen edges,
+/// styled after the iOS 26 Apple Intelligence animation.
+struct IntelligenceGlow: View {
+    let opacity: Double
+    @State private var isAnimating = false
+
+    var body: some View {
+        ZStack {
+            // Primary rotating gradient
+            RoundedRectangle(cornerRadius: 40)
+                .strokeBorder(
+                    AngularGradient(
+                        colors: [
+                            Color(red: 0.2, green: 0.4, blue: 1.0),    // blue
+                            Color(red: 0.5, green: 0.3, blue: 0.9),    // purple
+                            Color(red: 0.95, green: 0.3, blue: 0.5),   // pink
+                            Color(red: 1.0, green: 0.6, blue: 0.2),    // orange
+                            Color(red: 0.2, green: 0.4, blue: 1.0),    // blue (loop)
+                        ],
+                        center: .center
+                    ),
+                    lineWidth: 4
+                )
+                .rotationEffect(.degrees(isAnimating ? 360 : 0))
+                .blur(radius: 18)
+                .opacity(opacity * 0.5)
+                .padding(6)
+                .ignoresSafeArea()
+
+        
