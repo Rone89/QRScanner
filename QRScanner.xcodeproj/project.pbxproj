@@ -14,6 +14,7 @@
 		3D1A2B3C4D5E6F789012345E /* WidgetExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D1A2B3C4D5E6F789012345F /* WidgetExtension.swift */; };
 		3D1A2B3C4D5E6F7890123460 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3D1A2B3C4D5E6F7890123461 /* Assets.xcassets */; };
 			3D1A2B3C4D5E6F78901234A0 /* WidgetExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D1A2B3C4D5E6F789012345F /* WidgetExtension.swift */; };
+			3D1A2B3C4D5E6F78901234AE /* QRScannerWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 3D1A2B3C4D5E6F78901234A1 /* QRScannerWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -89,6 +90,20 @@
 		};
 /* End PBXGroup section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		3D1A2B3C4D5E6F78901234AD /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3D1A2B3C4D5E6F78901234AE /* QRScannerWidgetExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXNativeTarget section */
 		3D1A2B3C4D5E6F7890123468 /* QRScanner */ = {
 			isa = PBXNativeTarget;
@@ -97,10 +112,12 @@
 				3D1A2B3C4D5E6F789012346A /* Sources */,
 				3D1A2B3C4D5E6F7890123464 /* Frameworks */,
 				3D1A2B3C4D5E6F789012346B /* Resources */,
+				3D1A2B3C4D5E6F78901234AD /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				3D1A2B3C4D5E6F78901234A8 /* QRScannerWidgetExtension */,
 			);
 			name = QRScanner;
 			productName = QRScanner;
